@@ -195,6 +195,9 @@ impl PeImage {
 
     /// Return the function containing an RVA.
     pub fn function_at_rva(&self, rva: u32) -> Result<Function> {
+        if !self.is_executable_rva(rva) {
+            return Err(Error::OutsideCode(self.image_base + u64::from(rva)));
+        }
         let (start, end, source) = self
             .ranges
             .iter()
@@ -262,8 +265,11 @@ impl PeImage {
                         .ok_or_else(|| Error::InvalidPe("section overflow".into()))?,
                 )
                 .ok_or_else(|| Error::InvalidPe("section overflow".into()))?;
+            let header_end = offset
+                .checked_add(40)
+                .ok_or_else(|| Error::InvalidPe("section header overflow".into()))?;
             let header = bytes
-                .get(offset..offset + 40)
+                .get(offset..header_end)
                 .ok_or_else(|| Error::InvalidPe("section header is truncated".into()))?;
             let name_end = header[..8].iter().position(|byte| *byte == 0).unwrap_or(8);
             sections.push(Section {

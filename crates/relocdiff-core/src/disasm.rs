@@ -43,7 +43,7 @@ pub(crate) fn decode_function(
     let limit = bytes.len();
     while consumed < limit && instructions.len() < 100_000 {
         let instruction = decoder.decode();
-        let length = instruction.len() as usize;
+        let length = instruction.len();
         if instruction.is_invalid() || length == 0 || consumed.saturating_add(length) > limit {
             return Err(Error::Decode(start_va + consumed as u64));
         }
@@ -159,10 +159,9 @@ fn recover_blocks(
     for (index, instruction) in instructions.iter().enumerate() {
         if instruction.normalized.mnemonic.starts_with('j')
             && instruction.normalized.mnemonic != "jmp"
+            && index + 1 < instructions.len()
         {
-            if index + 1 < instructions.len() {
-                leaders.push(index + 1);
-            }
+            leaders.push(index + 1);
         }
         if instruction.normalized.mnemonic == "jmp" && index + 1 < instructions.len() {
             leaders.push(index + 1);
