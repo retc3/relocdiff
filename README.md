@@ -24,6 +24,8 @@ relocdiff inspect FILE --address VA
 
 Use `relocdiff --help` for all options.
 
+Run the end-to-end check on Windows with `pwsh -File scripts/test-e2e.ps1`.
+
 ## Support
 
 v0.1 supports x86-64 PE32+ images.
