@@ -116,7 +116,7 @@ fn normalize(
                 .image_base()
                 .saturating_add(u64::from(function_end_rva));
             if target >= function_start && target < end_va {
-                format!("local:{:#x}", target - function_start)
+                "local".to_string()
             } else {
                 "external".to_string()
             }

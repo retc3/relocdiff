@@ -317,6 +317,9 @@ impl PeImage {
                         if target >= 0
                             && target <= i64::from(u32::MAX)
                             && self.is_executable_rva(target as u32)
+                            && !ranges.iter().any(|(begin, end, _)| {
+                                target as u32 >= *begin && (target as u32) < *end
+                            })
                         {
                             starts.insert(target as u32);
                         }
