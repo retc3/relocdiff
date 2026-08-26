@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+//! Safe PE32+ x86-64 function recovery and relocation-aware matching.
+
 mod disasm;
 mod error;
 mod matcher;
