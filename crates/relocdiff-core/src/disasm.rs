@@ -5,6 +5,7 @@ use iced_x86::{
     IntelFormatter, OpKind,
 };
 use serde::Serialize;
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize)]
 /// A decoded x86-64 instruction.
@@ -17,6 +18,8 @@ pub struct Instruction {
     pub text: String,
     /// Normalized instruction data.
     pub normalized: NormalizedInstruction,
+    #[serde(skip)]
+    branch_target: Option<u64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize)]
@@ -50,11 +53,23 @@ pub(crate) fn decode_function(
         let mut text = String::new();
         formatter.format(&instruction, &mut text);
         let normalized = normalize(image, start_va, end, &instruction);
+        let branch_target = if instruction.op_count() > 0
+            && matches!(
+                instruction.op_kind(0),
+                iced_x86::OpKind::NearBranch16
+                    | iced_x86::OpKind::NearBranch32
+                    | iced_x86::OpKind::NearBranch64
+            ) {
+            Some(instruction.near_branch_target())
+        } else {
+            None
+        };
         instructions.push(Instruction {
             address: instruction.ip(),
             length: length as u8,
             text,
             normalized,
+            branch_target,
         });
         consumed += length;
         if matches!(instruction.flow_control(), FlowControl::Return) {
@@ -155,8 +170,18 @@ fn recover_blocks(
     function_start: u64,
     function_end_rva: u32,
 ) -> Vec<crate::BasicBlock> {
+    let index_by_address: HashMap<u64, usize> = instructions
+        .iter()
+        .enumerate()
+        .map(|(index, instruction)| (instruction.address, index))
+        .collect();
     let mut leaders = vec![0usize];
     for (index, instruction) in instructions.iter().enumerate() {
+        if let Some(target) = instruction.branch_target {
+            if let Some(target_index) = index_by_address.get(&target) {
+                leaders.push(*target_index);
+            }
+        }
         if instruction.normalized.mnemonic.starts_with('j')
             && instruction.normalized.mnemonic != "jmp"
             && index + 1 < instructions.len()
@@ -176,7 +201,16 @@ fn recover_blocks(
             .copied()
             .unwrap_or(instructions.len());
         let mut successors = Vec::new();
-        if end < instructions.len() {
+        if let Some(target_index) = instructions[end - 1]
+            .branch_target
+            .and_then(|target| index_by_address.get(&target).copied())
+        {
+            if let Ok(target_block) = leaders.binary_search(&target_index) {
+                successors.push(target_block);
+            }
+        }
+        let mnemonic = &instructions[end - 1].normalized.mnemonic;
+        if end < instructions.len() && mnemonic != "jmp" {
             successors.push(index + 1);
         }
         let _ = (function_start, function_end_rva);

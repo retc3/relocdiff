@@ -67,7 +67,7 @@ fn first_code(rip_displacement: u32, call_displacement: u32, constant: u8) -> Ve
     code.extend(rip_displacement.to_le_bytes());
     code.extend([0xe8]);
     code.extend(call_displacement.to_le_bytes());
-    code.extend([0x83, 0xf8, constant, 0x75, 0x01, 0xc3]);
+    code.extend([0x83, 0xf8, constant, 0x75, 0x00, 0xc3]);
     code
 }
 
@@ -88,6 +88,7 @@ fn maps_addresses_and_pdata_ranges() {
         image.function_at_va(0x140001001).unwrap().address,
         0x140001000
     );
+    assert_eq!(image.function_at_va(0x140001000).unwrap().block_count(), 2);
     assert_eq!(
         image.function_starts().collect::<Vec<_>>(),
         vec![0x140001000, 0x140001020]
