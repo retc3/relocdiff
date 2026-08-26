@@ -2,7 +2,7 @@ use clap::{Args, Parser, Subcommand};
 use relocdiff_core::{Function, Match, Matcher, PeImage, Result};
 use serde_json::json;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -166,7 +166,7 @@ fn resolve_function(image: &PeImage, address: Option<u64>, rva: Option<u64>) -> 
     }
 }
 
-fn print_find(path: &PathBuf, source: &Function, matches: &[Match]) {
+fn print_find(path: &Path, source: &Function, matches: &[Match]) {
     println!("source");
     println!("  {}  {:#x}", path.display(), source.address);
     println!(
