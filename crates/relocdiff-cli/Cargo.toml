@@ -1,0 +1,22 @@
+[package]
+name = "relocdiff"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Find matching x86-64 functions across PE32+ builds"
+readme = "../../README.md"
+keywords = ["binary-analysis", "pe", "reverse-engineering"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "relocdiff"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+relocdiff-core = { version = "0.1.0", path = "../relocdiff-core" }
+serde_json.workspace = true
+

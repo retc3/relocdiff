@@ -1,0 +1,18 @@
+[package]
+name = "relocdiff-core"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Normalize and match x86-64 functions in PE32+ binaries"
+readme = "../../README.md"
+keywords = ["binary-analysis", "pe", "reverse-engineering"]
+categories = ["development-tools", "parser-implementations"]
+
+[dependencies]
+iced-x86.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
