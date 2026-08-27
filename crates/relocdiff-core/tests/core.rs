@@ -192,3 +192,21 @@ fn maps_matched_and_changed_functions() {
     assert_eq!(map.entries[0].state, MapState::Matched);
     assert_eq!(map.entries[1].state, MapState::Changed);
 }
+
+#[test]
+fn mapping_does_not_claim_one_target_twice() {
+    let old = PeImage::parse(&image(
+        &first_code(0x20, 0x100, 0x2a),
+        &first_code(0x20, 0x100, 0x2a),
+    ))
+    .unwrap();
+    let new = PeImage::parse(&image(&first_code(0x80, 0x125, 0x2a), &second_code(6))).unwrap();
+    let map = map_images(&old, &new, 70.0).unwrap();
+    let targets: Vec<_> = map
+        .entries
+        .iter()
+        .filter_map(|entry| entry.target_address)
+        .collect();
+    assert_eq!(targets.len(), 2);
+    assert_ne!(targets[0], targets[1]);
+}

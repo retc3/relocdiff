@@ -56,21 +56,21 @@ pub fn map_images(source: &PeImage, target: &PeImage, threshold: f32) -> Result<
     let mut claimed_targets = HashSet::new();
     let mut ambiguous_targets = HashSet::new();
     for source_function in &source_functions {
-        let candidates =
+        let mut candidates =
             exact_candidates(source_function, &target_functions, &target_by_fingerprint)
-                .or_else(|| {
-                    let filtered: Vec<Function> = target_functions
-                        .iter()
-                        .filter(|candidate| cheap_map_filter(source_function, candidate))
-                        .cloned()
-                        .collect();
-                    if filtered.is_empty() {
-                        None
-                    } else {
-                        Some(matcher.find_in_candidates(source_function, &filtered))
-                    }
-                })
                 .unwrap_or_default();
+        candidates.retain(|candidate| !claimed_targets.contains(&candidate.address));
+        if candidates.is_empty() {
+            let filtered: Vec<Function> = target_functions
+                .iter()
+                .filter(|candidate| {
+                    !claimed_targets.contains(&candidate.address)
+                        && cheap_map_filter(source_function, candidate)
+                })
+                .cloned()
+                .collect();
+            candidates = matcher.find_in_candidates(source_function, &filtered);
+        }
         let Some(best) = candidates.first() else {
             entries.push(MapEntry {
                 source_address: Some(source_function.address),
