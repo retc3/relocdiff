@@ -88,6 +88,13 @@ if (-not $SkipBuild) {
 $exe = Join-Path $repo "target\release\relocdiff.exe"
 if (-not (Test-Path -LiteralPath $exe)) { throw "missing executable: $exe" }
 
+$oldIndex = Join-Path $out "old.rdx"
+$newIndex = Join-Path $out "new.rdx"
+& $exe index $old --output $oldIndex 1>$null
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $oldIndex)) { throw "old index command failed" }
+& $exe index $new --output $newIndex 1>$null
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $newIndex)) { throw "new index command failed" }
+
 $jsonText = (& $exe find $old $new --address 0x140001000 --top 2 --json | Out-String).Trim()
 if ($LASTEXITCODE -ne 0) { throw "find command failed" }
 $result = $jsonText | ConvertFrom-Json
@@ -109,6 +116,11 @@ if ($LASTEXITCODE -ne 0) { throw "map command failed" }
 $map = $mapText | ConvertFrom-Json
 if (@($map.entries).Count -ne 2) { throw "map returned the wrong number of entries" }
 if ($map.entries[0].state -ne "Matched" -or $map.entries[1].state -ne "Changed") { throw "map returned wrong states" }
+
+$indexedFind = (& $exe find $oldIndex $newIndex --rva 0x1000 --json | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) { throw "indexed find command failed" }
+$indexedResult = $indexedFind | ConvertFrom-Json
+if ($indexedResult.matches[0].address -ne "0x140001000") { throw "indexed find returned wrong address" }
 
 $missing = Join-Path $out "missing.exe"
 $errorFile = Join-Path $out "error.txt"

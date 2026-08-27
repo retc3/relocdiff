@@ -1,5 +1,5 @@
 use clap::{Args, Parser, Subcommand};
-use relocdiff_core::{Function, Match, Matcher, PeImage, Result};
+use relocdiff_core::{AnalysisIndex, Function, Match, Matcher, PeImage, Result};
 use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,6 +25,8 @@ enum Command {
     Map(MapArgs),
     /// Show decoded and normalized instructions.
     Inspect(InspectArgs),
+    /// Build a reusable function-recovery index from a PE image.
+    Index(IndexArgs),
 }
 
 #[derive(Debug, Args)]
@@ -105,6 +107,43 @@ struct MapArgs {
     only_unmatched: bool,
 }
 
+#[derive(Debug, Args)]
+struct IndexArgs {
+    /// PE image to analyze.
+    file: PathBuf,
+    /// Output analysis index.
+    #[arg(short, long)]
+    output: PathBuf,
+}
+
+enum Input {
+    Pe(PeImage),
+    Index(AnalysisIndex),
+}
+
+impl Input {
+    fn functions(&self) -> Vec<Function> {
+        match self {
+            Self::Pe(image) => image.functions(),
+            Self::Index(index) => index.functions().to_vec(),
+        }
+    }
+
+    fn function_at_va(&self, address: u64) -> Result<Function> {
+        match self {
+            Self::Pe(image) => image.function_at_va(address),
+            Self::Index(index) => index.function_at_va(address),
+        }
+    }
+
+    fn function_at_rva(&self, rva: u32) -> Result<Function> {
+        match self {
+            Self::Pe(image) => image.function_at_rva(rva),
+            Self::Index(index) => index.function_at_rva(rva),
+        }
+    }
+}
+
 fn main() {
     let exit_code = match run() {
         Ok(code) => code,
@@ -122,7 +161,20 @@ fn run() -> Result<i32> {
         Command::Diff(args) => diff(args),
         Command::Map(args) => map(args),
         Command::Inspect(args) => inspect(args),
+        Command::Index(args) => index(args),
     }
+}
+
+fn index(args: IndexArgs) -> Result<i32> {
+    let bytes = read_input_bytes(&args.file)?;
+    let image = PeImage::parse(&bytes)?;
+    AnalysisIndex::from_image(&image).write_to(&args.output)?;
+    println!(
+        "wrote {} functions to {}",
+        image.functions().len(),
+        args.output.display()
+    );
+    Ok(0)
 }
 
 fn map(args: MapArgs) -> Result<i32> {
@@ -136,15 +188,11 @@ fn map(args: MapArgs) -> Result<i32> {
             "use only one of --only-changed and --only-unmatched".into(),
         ));
     }
-    let old_bytes = fs::read(&args.old).map_err(|error| {
-        relocdiff_core::Error::InvalidPe(format!("cannot read {}: {error}", args.old.display()))
-    })?;
-    let new_bytes = fs::read(&args.new).map_err(|error| {
-        relocdiff_core::Error::InvalidPe(format!("cannot read {}: {error}", args.new.display()))
-    })?;
-    let old = PeImage::parse(&old_bytes)?;
-    let new = PeImage::parse(&new_bytes)?;
-    let mut result = relocdiff_core::map_images(&old, &new, args.threshold)?;
+    let old = load_input(&args.old)?;
+    let new = load_input(&args.new)?;
+    let old_functions = old.functions();
+    let new_functions = new.functions();
+    let mut result = relocdiff_core::map_functions(&old_functions, &new_functions, args.threshold);
     if args.only_changed {
         result
             .entries
@@ -188,20 +236,15 @@ fn diff(args: DiffArgs) -> Result<i32> {
             "--threshold must be between 0 and 100".into(),
         ));
     }
-    let old_bytes = fs::read(&args.old).map_err(|error| {
-        relocdiff_core::Error::InvalidPe(format!("cannot read {}: {error}", args.old.display()))
-    })?;
-    let new_bytes = fs::read(&args.new).map_err(|error| {
-        relocdiff_core::Error::InvalidPe(format!("cannot read {}: {error}", args.new.display()))
-    })?;
-    let old = PeImage::parse(&old_bytes)?;
-    let new = PeImage::parse(&new_bytes)?;
+    let old = load_input(&args.old)?;
+    let new = load_input(&args.new)?;
     let source = resolve_function(&old, args.address, args.rva)?;
+    let target_functions = new.functions();
     let matches = Matcher {
         top: 1,
         threshold: args.threshold,
     }
-    .find(&source, &new)?;
+    .find_functions(&source, &target_functions);
     let Some(best) = matches.first() else {
         if args.json {
             println!(
@@ -236,20 +279,15 @@ fn find(args: FindArgs) -> Result<i32> {
             "--top must be positive and --threshold must be between 0 and 100".into(),
         ));
     }
-    let old_bytes = fs::read(&args.old).map_err(|error| {
-        relocdiff_core::Error::InvalidPe(format!("cannot read {}: {error}", args.old.display()))
-    })?;
-    let new_bytes = fs::read(&args.new).map_err(|error| {
-        relocdiff_core::Error::InvalidPe(format!("cannot read {}: {error}", args.new.display()))
-    })?;
-    let old = PeImage::parse(&old_bytes)?;
-    let new = PeImage::parse(&new_bytes)?;
+    let old = load_input(&args.old)?;
+    let new = load_input(&args.new)?;
     let source = resolve_function(&old, args.address, args.rva)?;
+    let target_functions = new.functions();
     let matches = Matcher {
         top: args.top,
         threshold: args.threshold,
     }
-    .find(&source, &new)?;
+    .find_functions(&source, &target_functions);
     if args.json {
         let output = json!({
             "source": summary(&source),
@@ -266,11 +304,8 @@ fn find(args: FindArgs) -> Result<i32> {
 }
 
 fn inspect(args: InspectArgs) -> Result<i32> {
-    let bytes = fs::read(&args.file).map_err(|error| {
-        relocdiff_core::Error::InvalidPe(format!("cannot read {}: {error}", args.file.display()))
-    })?;
-    let image = PeImage::parse(&bytes)?;
-    let function = resolve_function(&image, args.address, args.rva)?;
+    let input = load_input(&args.file)?;
+    let function = resolve_function(&input, args.address, args.rva)?;
     if args.json {
         println!(
             "{}",
@@ -302,10 +337,10 @@ fn inspect(args: InspectArgs) -> Result<i32> {
     Ok(0)
 }
 
-fn resolve_function(image: &PeImage, address: Option<u64>, rva: Option<u64>) -> Result<Function> {
+fn resolve_function(input: &Input, address: Option<u64>, rva: Option<u64>) -> Result<Function> {
     match (address, rva) {
-        (Some(address), None) => image.function_at_va(address),
-        (None, Some(rva)) => image.function_at_rva(
+        (Some(address), None) => input.function_at_va(address),
+        (None, Some(rva)) => input.function_at_rva(
             u32::try_from(rva).map_err(|_| relocdiff_core::Error::OutsideCode(rva))?,
         ),
         (None, None) => Err(relocdiff_core::Error::InvalidPe(
@@ -315,6 +350,23 @@ fn resolve_function(image: &PeImage, address: Option<u64>, rva: Option<u64>) -> 
             "provide only one of --address or --rva".into(),
         )),
     }
+}
+
+fn read_input_bytes(path: &Path) -> Result<Vec<u8>> {
+    fs::read(path).map_err(|error| {
+        relocdiff_core::Error::InvalidPe(format!("cannot read {}: {error}", path.display()))
+    })
+}
+
+fn load_input(path: &Path) -> Result<Input> {
+    if path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("rdx"))
+    {
+        return Ok(Input::Index(AnalysisIndex::read_from(path)?));
+    }
+    Ok(Input::Pe(PeImage::parse(&read_input_bytes(path)?)?))
 }
 
 fn print_find(path: &Path, source: &Function, matches: &[Match]) {

@@ -22,6 +22,7 @@ relocdiff find OLD NEW --rva RVA
 relocdiff diff OLD NEW --address VA
 relocdiff map OLD NEW
 relocdiff inspect FILE --address VA
+relocdiff index FILE --output FILE.rdx
 ```
 
 Use `relocdiff --help` for all options.
@@ -30,7 +31,7 @@ Run the end-to-end check on Windows with `pwsh -File scripts/test-e2e.ps1`.
 
 ## Support
 
-v0.4 supports x86-64 PE32+ images.
+v0.5 supports x86-64 PE32+ images and reusable `.rdx` analysis indexes.
 
 ## License
 

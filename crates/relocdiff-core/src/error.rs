@@ -18,6 +18,9 @@ pub enum Error {
     /// The function contains bytes that cannot be decoded safely.
     #[error("decode error at {0:#x}")]
     Decode(u64),
+    /// The input is not a valid relocdiff analysis index.
+    #[error("invalid analysis index: {0}")]
+    InvalidIndex(String),
 }
 
 /// A result returned by this crate.

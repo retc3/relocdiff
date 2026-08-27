@@ -55,14 +55,11 @@ impl Matcher {
     /// Find ranked target functions for a source function.
     pub fn find(&self, source: &Function, target: &PeImage) -> Result<Vec<Match>> {
         let candidates: Vec<Function> = target.recoverable_functions().collect();
-        Ok(self.find_in_candidates(source, &candidates))
+        Ok(self.find_functions(source, &candidates))
     }
 
-    pub(crate) fn find_in_candidates(
-        &self,
-        source: &Function,
-        target_functions: &[Function],
-    ) -> Vec<Match> {
+    /// Find ranked target functions from a previously recovered function list.
+    pub fn find_functions(&self, source: &Function, target_functions: &[Function]) -> Vec<Match> {
         let mut results = Vec::new();
         for function in target_functions {
             let address = function.address;

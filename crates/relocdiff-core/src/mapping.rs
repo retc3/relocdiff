@@ -44,6 +44,19 @@ pub struct BinaryMap {
 pub fn map_images(source: &PeImage, target: &PeImage, threshold: f32) -> Result<BinaryMap> {
     let source_functions: Vec<Function> = source.recoverable_functions().collect();
     let target_functions: Vec<Function> = target.recoverable_functions().collect();
+    Ok(map_functions(
+        &source_functions,
+        &target_functions,
+        threshold,
+    ))
+}
+
+/// Map previously recovered functions between two images.
+pub fn map_functions(
+    source_functions: &[Function],
+    target_functions: &[Function],
+    threshold: f32,
+) -> BinaryMap {
     let mut target_by_fingerprint: HashMap<u64, Vec<usize>> = HashMap::new();
     for (index, function) in target_functions.iter().enumerate() {
         target_by_fingerprint
@@ -53,9 +66,9 @@ pub fn map_images(source: &PeImage, target: &PeImage, threshold: f32) -> Result<
     }
     let mut raw_anchors = Vec::new();
     let mut anchor_target_counts: HashMap<u64, usize> = HashMap::new();
-    for source_function in &source_functions {
+    for source_function in source_functions {
         if let Some(candidates) =
-            exact_candidates(source_function, &target_functions, &target_by_fingerprint)
+            exact_candidates(source_function, target_functions, &target_by_fingerprint)
         {
             if candidates.len() == 1 {
                 raw_anchors.push((source_function.address, candidates[0].address));
@@ -73,9 +86,9 @@ pub fn map_images(source: &PeImage, target: &PeImage, threshold: f32) -> Result<
     let mut entries = Vec::new();
     let mut claimed_targets = HashSet::new();
     let mut ambiguous_targets = HashSet::new();
-    for source_function in &source_functions {
+    for source_function in source_functions {
         let mut candidates =
-            exact_candidates(source_function, &target_functions, &target_by_fingerprint)
+            exact_candidates(source_function, target_functions, &target_by_fingerprint)
                 .unwrap_or_default();
         candidates.retain(|candidate| !claimed_targets.contains(&candidate.address));
         if candidates.is_empty() {
@@ -87,7 +100,7 @@ pub fn map_images(source: &PeImage, target: &PeImage, threshold: f32) -> Result<
                 })
                 .cloned()
                 .collect();
-            candidates = matcher.find_in_candidates(source_function, &filtered);
+            candidates = matcher.find_functions(source_function, &filtered);
         }
         for candidate in &mut candidates {
             let relationship =
@@ -137,7 +150,7 @@ pub fn map_images(source: &PeImage, target: &PeImage, threshold: f32) -> Result<
             score: Some(best.score),
         });
     }
-    for target_function in &target_functions {
+    for target_function in target_functions {
         if !claimed_targets.contains(&target_function.address)
             && !ambiguous_targets.contains(&target_function.address)
         {
@@ -158,7 +171,7 @@ pub fn map_images(source: &PeImage, target: &PeImage, threshold: f32) -> Result<
                 .unwrap_or(entry.target_address.unwrap_or(0)),
         )
     });
-    Ok(BinaryMap { entries })
+    BinaryMap { entries }
 }
 
 fn exact_candidates(

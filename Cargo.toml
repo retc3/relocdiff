@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/relocdiff-core", "crates/relocdiff-cli"]
 
 [workspace.package]
-version = "0.4.1"
+version = "0.5.0"
 authors = ["retc3 <retc3@disroot.org>"]
 edition = "2021"
 rust-version = "1.80"
@@ -12,6 +12,7 @@ repository = "https://github.com/retc3/relocdiff"
 
 [workspace.dependencies]
 iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "intel", "instr_info"] }
+postcard = { version = "1.1", features = ["alloc"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

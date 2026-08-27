@@ -4,10 +4,10 @@ use iced_x86::{
     Decoder, DecoderOptions, FlowControl, Formatter, Instruction as IcedInstruction,
     IntelFormatter, OpKind,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 /// A decoded x86-64 instruction.
 pub struct Instruction {
     /// Instruction virtual address.
@@ -29,7 +29,7 @@ impl Instruction {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Hash, Serialize)]
 /// A stable representation of an instruction.
 pub struct NormalizedInstruction {
     /// Mnemonic name.

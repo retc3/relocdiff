@@ -1,4 +1,6 @@
-use relocdiff_core::{diff_functions, map_images, DiffKind, MapState, Matcher, PeImage};
+use relocdiff_core::{
+    diff_functions, map_images, AnalysisIndex, DiffKind, MapState, Matcher, PeImage,
+};
 
 fn image(code: &[u8], second_code: &[u8]) -> Vec<u8> {
     let mut bytes = vec![0u8; 0x800];
@@ -223,4 +225,17 @@ fn uses_exact_callee_anchors_as_relationship_evidence() {
     let map = map_images(&old, &new, 70.0).unwrap();
     assert_eq!(map.entries[0].state, MapState::Matched);
     assert_eq!(map.entries[0].score.unwrap().relationship_similarity, 1.0);
+}
+
+#[test]
+fn round_trips_analysis_index() {
+    let image = PeImage::parse(&image(&first_code(0x20, 0x100, 0x2a), &second_code(5))).unwrap();
+    let index = AnalysisIndex::from_image(&image);
+    let decoded = AnalysisIndex::from_bytes(&index.to_bytes().unwrap()).unwrap();
+    assert_eq!(decoded.image_base(), image.image_base());
+    assert_eq!(decoded.functions().len(), image.functions().len());
+    assert_eq!(
+        decoded.function_at_rva(0x1000).unwrap().address,
+        image.function_at_rva(0x1000).unwrap().address
+    );
 }

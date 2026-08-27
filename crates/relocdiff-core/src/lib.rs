@@ -6,6 +6,7 @@
 mod diff;
 mod disasm;
 mod error;
+mod index;
 mod mapping;
 mod matcher;
 mod pe;
@@ -13,6 +14,7 @@ mod pe;
 pub use diff::{diff_functions, DiffKind, DiffOperation, FunctionDiff};
 pub use disasm::{Instruction, NormalizedInstruction};
 pub use error::{Error, Result};
-pub use mapping::{map_images, BinaryMap, MapEntry, MapState};
+pub use index::AnalysisIndex;
+pub use mapping::{map_functions, map_images, BinaryMap, MapEntry, MapState};
 pub use matcher::{Match, MatchScore, Matcher};
 pub use pe::{BasicBlock, Function, FunctionSource, PeImage, Section};

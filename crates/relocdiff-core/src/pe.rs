@@ -1,13 +1,13 @@
 use crate::disasm::{decode_function, Instruction};
 use crate::{Error, Result};
 use iced_x86::{Decoder, DecoderOptions, OpKind};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 const IMAGE_SCN_MEM_EXECUTE: u32 = 0x2000_0000;
 const IMAGE_DIRECTORY_ENTRY_EXCEPTION: usize = 3;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 /// A mapped PE section.
 pub struct Section {
     /// Section name, without trailing NUL bytes.
@@ -36,7 +36,7 @@ impl Section {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 /// The source used to recover a function boundary.
 pub enum FunctionSource {
     /// The PE exception table supplied the range.
@@ -45,7 +45,7 @@ pub enum FunctionSource {
     Heuristic,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 /// A recovered basic block.
 pub struct BasicBlock {
     /// Instruction indexes in this block.
@@ -54,7 +54,7 @@ pub struct BasicBlock {
     pub successors: Vec<usize>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 /// A decoded function and its structural features.
 pub struct Function {
     /// Function start VA.
@@ -227,6 +227,11 @@ impl PeImage {
         self.ranges
             .iter()
             .map(|(start, _, _)| self.image_base + u64::from(*start))
+    }
+
+    /// Recover all functions that can be decoded safely.
+    pub fn functions(&self) -> Vec<Function> {
+        self.recoverable_functions().collect()
     }
 
     pub(crate) fn recoverable_functions(&self) -> impl Iterator<Item = Function> + '_ {
