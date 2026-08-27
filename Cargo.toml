@@ -4,11 +4,11 @@ members = ["crates/relocdiff-core", "crates/relocdiff-cli"]
 
 [workspace.package]
 version = "0.1.0"
-authors = ["RetC3 <rect3@disroot.org>"]
+authors = ["retc3 <retc3@disroot.org>"]
 edition = "2021"
 rust-version = "1.80"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/RetC3/relocdiff"
+repository = "https://github.com/retc3/relocdiff"
 
 [workspace.dependencies]
 iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "intel", "instr_info"] }

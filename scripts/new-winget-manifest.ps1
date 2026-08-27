@@ -7,25 +7,25 @@ param(
 
 $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $InstallerPath).Hash
 $url = "https://github.com/$Repository/releases/download/v$Version/relocdiff-x86_64-pc-windows-msvc.exe"
-$directory = Join-Path $OutputDirectory "RetC3.relocdiff"
+$directory = Join-Path $OutputDirectory "retc3.relocdiff"
 New-Item -ItemType Directory -Force -Path $directory | Out-Null
 
 @"
-PackageIdentifier: RetC3.relocdiff
+PackageIdentifier: retc3.relocdiff
 PackageVersion: $Version
 PackageLocale: en-US
-Publisher: RetC3
-PublisherUrl: https://github.com/RetC3
+Publisher: retc3
+PublisherUrl: https://github.com/retc3
 PackageName: relocdiff
 PackageUrl: https://github.com/$Repository
 License: MIT OR Apache-2.0
 ShortDescription: Find matching x86-64 functions across PE32+ builds.
 ManifestType: defaultLocale
 ManifestVersion: 1.6.0
-"@ | Set-Content -Encoding utf8 (Join-Path $directory "RetC3.relocdiff.locale.en-US.yaml")
+"@ | Set-Content -Encoding utf8 (Join-Path $directory "retc3.relocdiff.locale.en-US.yaml")
 
 @"
-PackageIdentifier: RetC3.relocdiff
+PackageIdentifier: retc3.relocdiff
 PackageVersion: $Version
 Installers:
   - Architecture: x64
@@ -34,14 +34,14 @@ Installers:
     InstallerSha256: $hash
 ManifestType: installer
 ManifestVersion: 1.6.0
-"@ | Set-Content -Encoding utf8 (Join-Path $directory "RetC3.relocdiff.installer.yaml")
+"@ | Set-Content -Encoding utf8 (Join-Path $directory "retc3.relocdiff.installer.yaml")
 
 @"
-PackageIdentifier: RetC3.relocdiff
+PackageIdentifier: retc3.relocdiff
 PackageVersion: $Version
 DefaultLocale: en-US
 ManifestType: version
 ManifestVersion: 1.6.0
-"@ | Set-Content -Encoding utf8 (Join-Path $directory "RetC3.relocdiff.yaml")
+"@ | Set-Content -Encoding utf8 (Join-Path $directory "retc3.relocdiff.yaml")
 
 Write-Host "Wrote $directory"

@@ -106,3 +106,4 @@ if ($LASTEXITCODE -ne 2) { throw "invalid input did not return exit code 2" }
 if ((Get-Content -Raw $errorFile) -notmatch "^error: ") { throw "invalid input did not write a useful error" }
 
 Write-Host "e2e ok: relocated match, normalization, JSON, and exit code checks passed"
+exit 0
