@@ -17,6 +17,6 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
-relocdiff-core = { version = "0.5.0", path = "../relocdiff-core" }
+relocdiff-core = { version = "0.5.1", path = "../relocdiff-core" }
 serde_json.workspace = true
 

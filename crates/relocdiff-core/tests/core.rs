@@ -238,4 +238,12 @@ fn round_trips_analysis_index() {
         decoded.function_at_rva(0x1000).unwrap().address,
         image.function_at_rva(0x1000).unwrap().address
     );
+    assert_eq!(
+        decoded
+            .function_at_rva(0x1000)
+            .unwrap()
+            .direct_call_targets()
+            .collect::<Vec<_>>(),
+        vec![0x14000110c]
+    );
 }

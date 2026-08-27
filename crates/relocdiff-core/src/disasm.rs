@@ -18,7 +18,6 @@ pub struct Instruction {
     pub text: String,
     /// Normalized instruction data.
     pub normalized: NormalizedInstruction,
-    #[serde(skip)]
     branch_target: Option<u64>,
 }
 
