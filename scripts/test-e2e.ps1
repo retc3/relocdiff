@@ -104,6 +104,12 @@ if ($LASTEXITCODE -ne 0) { throw "diff command failed" }
 $diff = $diffText | ConvertFrom-Json
 if ([int]$diff.changed_constants -ne 1) { throw "diff missed changed constant" }
 
+$mapText = (& $exe map $old $new --threshold 70 --json | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) { throw "map command failed" }
+$map = $mapText | ConvertFrom-Json
+if (@($map.entries).Count -ne 2) { throw "map returned the wrong number of entries" }
+if ($map.entries[0].state -ne "Matched" -or $map.entries[1].state -ne "Changed") { throw "map returned wrong states" }
+
 $missing = Join-Path $out "missing.exe"
 $errorFile = Join-Path $out "error.txt"
 & $exe inspect $missing --rva 0x1000 1>$null 2>$errorFile

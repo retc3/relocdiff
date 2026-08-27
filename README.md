@@ -20,6 +20,7 @@ cargo install relocdiff
 relocdiff find OLD NEW --address VA
 relocdiff find OLD NEW --rva RVA
 relocdiff diff OLD NEW --address VA
+relocdiff map OLD NEW
 relocdiff inspect FILE --address VA
 ```
 
@@ -29,7 +30,7 @@ Run the end-to-end check on Windows with `pwsh -File scripts/test-e2e.ps1`.
 
 ## Support
 
-v0.2 supports x86-64 PE32+ images.
+v0.3 supports x86-64 PE32+ images.
 
 ## License
 

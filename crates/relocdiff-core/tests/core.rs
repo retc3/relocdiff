@@ -1,4 +1,4 @@
-use relocdiff_core::{diff_functions, DiffKind, Matcher, PeImage};
+use relocdiff_core::{diff_functions, map_images, DiffKind, MapState, Matcher, PeImage};
 
 fn image(code: &[u8], second_code: &[u8]) -> Vec<u8> {
     let mut bytes = vec![0u8; 0x800];
@@ -181,4 +181,14 @@ fn reports_semantic_constant_changes() {
         .operations
         .iter()
         .any(|operation| operation.kind == DiffKind::ChangedConstant));
+}
+
+#[test]
+fn maps_matched_and_changed_functions() {
+    let old = PeImage::parse(&image(&first_code(0x20, 0x100, 0x2a), &second_code(5))).unwrap();
+    let new = PeImage::parse(&image(&first_code(0x80, 0x125, 0x2a), &second_code(6))).unwrap();
+    let map = map_images(&old, &new, 70.0).unwrap();
+    assert_eq!(map.entries.len(), 2);
+    assert_eq!(map.entries[0].state, MapState::Matched);
+    assert_eq!(map.entries[1].state, MapState::Changed);
 }

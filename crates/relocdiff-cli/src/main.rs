@@ -21,6 +21,8 @@ enum Command {
     Find(FindArgs),
     /// Find a function and show semantic changes.
     Diff(DiffArgs),
+    /// Map all recovered functions between two PE images.
+    Map(MapArgs),
     /// Show decoded and normalized instructions.
     Inspect(InspectArgs),
 }
@@ -83,6 +85,26 @@ struct DiffArgs {
     json: bool,
 }
 
+#[derive(Debug, Args)]
+struct MapArgs {
+    /// Source PE image.
+    old: PathBuf,
+    /// Target PE image.
+    new: PathBuf,
+    /// Minimum ranking score from 0 to 100.
+    #[arg(long, default_value_t = 70.0)]
+    threshold: f32,
+    /// Emit JSON on stdout.
+    #[arg(long)]
+    json: bool,
+    /// Show only accepted changed matches.
+    #[arg(long)]
+    only_changed: bool,
+    /// Show only removed, new, or ambiguous functions.
+    #[arg(long)]
+    only_unmatched: bool,
+}
+
 fn main() {
     let exit_code = match run() {
         Ok(code) => code,
@@ -98,8 +120,66 @@ fn run() -> Result<i32> {
     match Cli::parse().command {
         Command::Find(args) => find(args),
         Command::Diff(args) => diff(args),
+        Command::Map(args) => map(args),
         Command::Inspect(args) => inspect(args),
     }
+}
+
+fn map(args: MapArgs) -> Result<i32> {
+    if !(0.0..=100.0).contains(&args.threshold) {
+        return Err(relocdiff_core::Error::InvalidPe(
+            "--threshold must be between 0 and 100".into(),
+        ));
+    }
+    if args.only_changed && args.only_unmatched {
+        return Err(relocdiff_core::Error::InvalidPe(
+            "use only one of --only-changed and --only-unmatched".into(),
+        ));
+    }
+    let old_bytes = fs::read(&args.old).map_err(|error| {
+        relocdiff_core::Error::InvalidPe(format!("cannot read {}: {error}", args.old.display()))
+    })?;
+    let new_bytes = fs::read(&args.new).map_err(|error| {
+        relocdiff_core::Error::InvalidPe(format!("cannot read {}: {error}", args.new.display()))
+    })?;
+    let old = PeImage::parse(&old_bytes)?;
+    let new = PeImage::parse(&new_bytes)?;
+    let mut result = relocdiff_core::map_images(&old, &new, args.threshold)?;
+    if args.only_changed {
+        result
+            .entries
+            .retain(|entry| entry.state == relocdiff_core::MapState::Changed);
+    } else if args.only_unmatched {
+        result.entries.retain(|entry| {
+            matches!(
+                entry.state,
+                relocdiff_core::MapState::Removed
+                    | relocdiff_core::MapState::New
+                    | relocdiff_core::MapState::Ambiguous
+            )
+        });
+    }
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result).expect("JSON serialization cannot fail")
+        );
+    } else {
+        println!("OLD             NEW             SCORE   STATE");
+        for entry in result.entries {
+            let old = entry
+                .source_address
+                .map_or_else(|| "-".to_string(), |address| format!("{address:#014x}"));
+            let new = entry
+                .target_address
+                .map_or_else(|| "-".to_string(), |address| format!("{address:#014x}"));
+            let score = entry
+                .confidence
+                .map_or_else(|| "-".to_string(), |confidence| format!("{confidence:.1}%"));
+            println!("{old:<15} {new:<15} {score:<7} {:?}", entry.state);
+        }
+    }
+    Ok(0)
 }
 
 fn diff(args: DiffArgs) -> Result<i32> {

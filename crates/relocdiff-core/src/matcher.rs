@@ -52,18 +52,27 @@ impl Default for Matcher {
 impl Matcher {
     /// Find ranked target functions for a source function.
     pub fn find(&self, source: &Function, target: &PeImage) -> Result<Vec<Match>> {
+        let candidates: Vec<Function> = target.recoverable_functions().collect();
+        Ok(self.find_in_candidates(source, &candidates))
+    }
+
+    pub(crate) fn find_in_candidates(
+        &self,
+        source: &Function,
+        target_functions: &[Function],
+    ) -> Vec<Match> {
         let mut results = Vec::new();
-        for function in target.recoverable_functions() {
+        for function in target_functions {
             let address = function.address;
-            if !candidate_filter(source, &function) {
+            if !candidate_filter(source, function) {
                 continue;
             }
-            let score = score_details(source, &function);
+            let score = score_details(source, function);
             let confidence = confidence(score);
             if confidence < self.threshold {
                 continue;
             }
-            let instruction_changes = changed_instructions(source, &function);
+            let instruction_changes = changed_instructions(source, function);
             results.push(Match {
                 address,
                 byte_size: function.byte_size,
@@ -71,7 +80,7 @@ impl Matcher {
                 instruction_changes,
                 block_changes: source.block_count().abs_diff(function.block_count()),
                 score,
-                function,
+                function: function.clone(),
             });
         }
         results.sort_by(|left, right| {
@@ -81,7 +90,7 @@ impl Matcher {
                 .then_with(|| left.address.cmp(&right.address))
         });
         results.truncate(self.top.max(1));
-        Ok(results)
+        results
     }
 }
 
