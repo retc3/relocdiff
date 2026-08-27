@@ -30,7 +30,7 @@ Run the end-to-end check on Windows with `pwsh -File scripts/test-e2e.ps1`.
 
 ## Support
 
-v0.3 supports x86-64 PE32+ images.
+v0.4 supports x86-64 PE32+ images.
 
 ## License
 

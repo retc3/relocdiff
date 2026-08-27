@@ -210,3 +210,17 @@ fn mapping_does_not_claim_one_target_twice() {
     assert_eq!(targets.len(), 2);
     assert_ne!(targets[0], targets[1]);
 }
+
+#[test]
+fn uses_exact_callee_anchors_as_relationship_evidence() {
+    let old = PeImage::parse(&image(&first_code(0x20, 0x14, 0x2a), &second_code(5))).unwrap();
+    let new = PeImage::parse(&image(&first_code(0x80, 0x14, 0x2a), &second_code(5))).unwrap();
+    let source = old.function_at_va(0x140001000).unwrap();
+    assert_eq!(
+        source.direct_call_targets().collect::<Vec<_>>(),
+        vec![0x140001020]
+    );
+    let map = map_images(&old, &new, 70.0).unwrap();
+    assert_eq!(map.entries[0].state, MapState::Matched);
+    assert_eq!(map.entries[0].score.unwrap().relationship_similarity, 1.0);
+}

@@ -22,6 +22,13 @@ pub struct Instruction {
     branch_target: Option<u64>,
 }
 
+impl Instruction {
+    /// Return the direct branch or call target, when present.
+    pub fn branch_target(&self) -> Option<u64> {
+        self.branch_target
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize)]
 /// A stable representation of an instruction.
 pub struct NormalizedInstruction {

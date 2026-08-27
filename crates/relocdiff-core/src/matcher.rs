@@ -29,6 +29,8 @@ pub struct MatchScore {
     pub structure_similarity: f32,
     /// Function size similarity.
     pub size_similarity: f32,
+    /// Similarity supported by known direct-call relationships.
+    pub relationship_similarity: f32,
 }
 
 /// Configuration and engine for matching recovered functions.
@@ -109,6 +111,7 @@ fn score_details(source: &Function, candidate: &Function) -> MatchScore {
             instruction_similarity: 1.0,
             structure_similarity: 1.0,
             size_similarity: 1.0,
+            relationship_similarity: 0.0,
         };
     }
     let instruction = sequence_similarity(source, candidate);
@@ -135,6 +138,7 @@ fn score_details(source: &Function, candidate: &Function) -> MatchScore {
         instruction_similarity: instruction,
         structure_similarity: structure.clamp(0.0, 1.0),
         size_similarity: size,
+        relationship_similarity: 0.0,
     }
 }
 

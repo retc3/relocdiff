@@ -51,6 +51,24 @@ pub fn map_images(source: &PeImage, target: &PeImage, threshold: f32) -> Result<
             .or_default()
             .push(index);
     }
+    let mut raw_anchors = Vec::new();
+    let mut anchor_target_counts: HashMap<u64, usize> = HashMap::new();
+    for source_function in &source_functions {
+        if let Some(candidates) =
+            exact_candidates(source_function, &target_functions, &target_by_fingerprint)
+        {
+            if candidates.len() == 1 {
+                raw_anchors.push((source_function.address, candidates[0].address));
+                *anchor_target_counts
+                    .entry(candidates[0].address)
+                    .or_default() += 1;
+            }
+        }
+    }
+    let anchors: HashMap<u64, u64> = raw_anchors
+        .into_iter()
+        .filter(|(_, target_address)| anchor_target_counts[target_address] == 1)
+        .collect();
     let matcher = Matcher { top: 2, threshold };
     let mut entries = Vec::new();
     let mut claimed_targets = HashSet::new();
@@ -71,6 +89,20 @@ pub fn map_images(source: &PeImage, target: &PeImage, threshold: f32) -> Result<
                 .collect();
             candidates = matcher.find_in_candidates(source_function, &filtered);
         }
+        for candidate in &mut candidates {
+            let relationship =
+                relationship_similarity(source_function, &candidate.function, &anchors);
+            candidate.score.relationship_similarity = relationship;
+            if candidate.confidence < 100.0 {
+                candidate.confidence = (candidate.confidence + relationship * 3.0).min(99.0);
+            }
+        }
+        candidates.sort_by(|left, right| {
+            right
+                .confidence
+                .total_cmp(&left.confidence)
+                .then_with(|| left.address.cmp(&right.address))
+        });
         let Some(best) = candidates.first() else {
             entries.push(MapEntry {
                 source_address: Some(source_function.address),
@@ -149,6 +181,7 @@ fn exact_candidates(
                 instruction_similarity: 1.0,
                 structure_similarity: 1.0,
                 size_similarity: 1.0,
+                relationship_similarity: 0.0,
             },
             function: function.clone(),
         })
@@ -164,6 +197,25 @@ fn cheap_map_filter(source: &Function, candidate: &Function) -> bool {
     instruction_delta <= max_delta
         && ratio(source.byte_size as usize, candidate.byte_size as usize) >= 0.25
         && ratio(source.block_count(), candidate.block_count()) >= 0.25
+}
+
+fn relationship_similarity(
+    source: &Function,
+    candidate: &Function,
+    anchors: &HashMap<u64, u64>,
+) -> f32 {
+    let known: Vec<u64> = source
+        .direct_call_targets()
+        .filter_map(|target| anchors.get(&target).copied())
+        .collect();
+    if known.is_empty() {
+        return 0.0;
+    }
+    let matched = candidate
+        .direct_call_targets()
+        .filter(|target| known.contains(target))
+        .count();
+    matched as f32 / known.len() as f32
 }
 
 fn ratio(left: usize, right: usize) -> f32 {

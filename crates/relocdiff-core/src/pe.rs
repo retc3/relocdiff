@@ -94,6 +94,13 @@ impl Function {
             .iter()
             .map(|instruction| &instruction.normalized)
     }
+
+    /// Return direct call targets used by this function.
+    pub fn direct_call_targets(&self) -> impl Iterator<Item = u64> + '_ {
+        self.instructions.iter().filter_map(|instruction| {
+            (instruction.normalized.mnemonic == "call").then(|| instruction.branch_target())?
+        })
+    }
 }
 
 /// A parsed PE32+ image.
