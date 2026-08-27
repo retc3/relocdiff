@@ -204,17 +204,15 @@ fn relationship_similarity(
     candidate: &Function,
     anchors: &HashMap<u64, u64>,
 ) -> f32 {
-    let known: Vec<u64> = source
+    let known: HashSet<u64> = source
         .direct_call_targets()
         .filter_map(|target| anchors.get(&target).copied())
         .collect();
     if known.is_empty() {
         return 0.0;
     }
-    let matched = candidate
-        .direct_call_targets()
-        .filter(|target| known.contains(target))
-        .count();
+    let candidate_targets: HashSet<u64> = candidate.direct_call_targets().collect();
+    let matched = candidate_targets.intersection(&known).count();
     matched as f32 / known.len() as f32
 }
 
