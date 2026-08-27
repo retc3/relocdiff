@@ -163,7 +163,7 @@ dependencies = [
 
 [[package]]
 name = "relocdiff"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "clap",
  "relocdiff-core",
@@ -172,7 +172,7 @@ dependencies = [
 
 [[package]]
 name = "relocdiff-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "iced-x86",
  "serde",
