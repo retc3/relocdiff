@@ -1,5 +1,6 @@
 use crate::{Function, MatchScore};
 use serde::Serialize;
+use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 /// The semantic meaning of one aligned instruction pair.
@@ -54,7 +55,7 @@ pub struct FunctionDiff {
     pub changed_constants: usize,
     /// Changed call count.
     pub changed_calls: usize,
-    /// Basic-block count difference.
+    /// Number of affected basic blocks.
     pub changed_blocks: usize,
     /// Structural changes that do not map to one instruction.
     pub structural_changes: Vec<String>,
@@ -75,44 +76,7 @@ pub fn diff_functions(
     let mut operations = Vec::new();
     let mut index = 0;
     while index < aligned.len() {
-        let (left, right) = aligned[index];
-        if let (Some(source_index), None) = (left, right) {
-            if let Some((None, Some(target_index))) = aligned.get(index + 1).copied() {
-                operations.push(changed_operation(
-                    source,
-                    target,
-                    source_index,
-                    target_index,
-                ));
-                index += 2;
-                continue;
-            }
-            operations.push(DiffOperation {
-                source_index: Some(source_index),
-                target_index: None,
-                kind: DiffKind::Removed,
-                source: Some(source_instructions[source_index].text.clone()),
-                target: None,
-            });
-        } else if let (None, Some(target_index)) = (left, right) {
-            if let Some((Some(source_index), None)) = aligned.get(index + 1).copied() {
-                operations.push(changed_operation(
-                    source,
-                    target,
-                    source_index,
-                    target_index,
-                ));
-                index += 2;
-                continue;
-            }
-            operations.push(DiffOperation {
-                source_index: None,
-                target_index: Some(target_index),
-                kind: DiffKind::Inserted,
-                source: None,
-                target: Some(target_instructions[target_index].text.clone()),
-            });
-        } else if let (Some(source_index), Some(target_index)) = (left, right) {
+        if let (Some(source_index), Some(target_index)) = aligned[index] {
             operations.push(DiffOperation {
                 source_index: Some(source_index),
                 target_index: Some(target_index),
@@ -120,8 +84,47 @@ pub fn diff_functions(
                 source: Some(source_instructions[source_index].text.clone()),
                 target: Some(target_instructions[target_index].text.clone()),
             });
+            index += 1;
+            continue;
         }
-        index += 1;
+        let mut removed = Vec::new();
+        let mut inserted = Vec::new();
+        while index < aligned.len() {
+            match aligned[index] {
+                (Some(source_index), None) => removed.push(source_index),
+                (None, Some(target_index)) => inserted.push(target_index),
+                (Some(_), Some(_)) => break,
+                (None, None) => unreachable!("alignment cannot contain an empty pair"),
+            }
+            index += 1;
+        }
+        let replacements = removed.len().min(inserted.len());
+        for replacement in 0..replacements {
+            operations.push(changed_operation(
+                source,
+                target,
+                removed[replacement],
+                inserted[replacement],
+            ));
+        }
+        for source_index in removed.into_iter().skip(replacements) {
+            operations.push(DiffOperation {
+                source_index: Some(source_index),
+                target_index: None,
+                kind: DiffKind::Removed,
+                source: Some(source_instructions[source_index].text.clone()),
+                target: None,
+            });
+        }
+        for target_index in inserted.into_iter().skip(replacements) {
+            operations.push(DiffOperation {
+                source_index: None,
+                target_index: Some(target_index),
+                kind: DiffKind::Inserted,
+                source: None,
+                target: Some(target_instructions[target_index].text.clone()),
+            });
+        }
     }
     let changed_instructions = operations
         .iter()
@@ -159,7 +162,7 @@ pub fn diff_functions(
         removed_instructions,
         changed_constants,
         changed_calls,
-        changed_blocks: source.block_count().abs_diff(target.block_count()),
+        changed_blocks: changed_blocks(source, target, &operations),
         structural_changes,
         operations,
     }
@@ -282,4 +285,36 @@ fn structural_changes(source: &Function, target: &Function) -> Vec<String> {
         ));
     }
     changes
+}
+
+fn changed_blocks(source: &Function, target: &Function, operations: &[DiffOperation]) -> usize {
+    let mut source_blocks = HashSet::new();
+    let mut target_blocks = HashSet::new();
+    for operation in operations
+        .iter()
+        .filter(|operation| operation.kind != DiffKind::Unchanged)
+    {
+        if let Some(index) = operation.source_index {
+            if let Some(block) = source
+                .blocks
+                .iter()
+                .position(|block| block.instructions.contains(&index))
+            {
+                source_blocks.insert(block);
+            }
+        }
+        if let Some(index) = operation.target_index {
+            if let Some(block) = target
+                .blocks
+                .iter()
+                .position(|block| block.instructions.contains(&index))
+            {
+                target_blocks.insert(block);
+            }
+        }
+    }
+    source_blocks
+        .len()
+        .max(target_blocks.len())
+        .max(source.block_count().abs_diff(target.block_count()))
 }
