@@ -390,6 +390,7 @@ fn match_summary(candidate: &Match) -> serde_json::Value {
             "instruction_similarity": candidate.score.instruction_similarity,
             "structure_similarity": candidate.score.structure_similarity,
             "size_similarity": candidate.score.size_similarity,
+            "relationship_similarity": candidate.score.relationship_similarity,
         },
     })
 }
