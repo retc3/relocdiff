@@ -19,6 +19,8 @@ struct Cli {
 enum Command {
     /// Find a function in a second PE image.
     Find(FindArgs),
+    /// Find a function and show semantic changes.
+    Diff(DiffArgs),
     /// Show decoded and normalized instructions.
     Inspect(InspectArgs),
 }
@@ -61,6 +63,26 @@ struct InspectArgs {
     json: bool,
 }
 
+#[derive(Debug, Args)]
+struct DiffArgs {
+    /// Source PE image.
+    old: PathBuf,
+    /// Target PE image.
+    new: PathBuf,
+    /// Source virtual address.
+    #[arg(long, value_parser = parse_number, conflicts_with = "rva")]
+    address: Option<u64>,
+    /// Source relative virtual address.
+    #[arg(long, value_parser = parse_number, conflicts_with = "address")]
+    rva: Option<u64>,
+    /// Minimum ranking score from 0 to 100.
+    #[arg(long, default_value_t = 0.0)]
+    threshold: f32,
+    /// Emit JSON on stdout.
+    #[arg(long)]
+    json: bool,
+}
+
 fn main() {
     let exit_code = match run() {
         Ok(code) => code,
@@ -75,8 +97,57 @@ fn main() {
 fn run() -> Result<i32> {
     match Cli::parse().command {
         Command::Find(args) => find(args),
+        Command::Diff(args) => diff(args),
         Command::Inspect(args) => inspect(args),
     }
+}
+
+fn diff(args: DiffArgs) -> Result<i32> {
+    if !(0.0..=100.0).contains(&args.threshold) {
+        return Err(relocdiff_core::Error::InvalidPe(
+            "--threshold must be between 0 and 100".into(),
+        ));
+    }
+    let old_bytes = fs::read(&args.old).map_err(|error| {
+        relocdiff_core::Error::InvalidPe(format!("cannot read {}: {error}", args.old.display()))
+    })?;
+    let new_bytes = fs::read(&args.new).map_err(|error| {
+        relocdiff_core::Error::InvalidPe(format!("cannot read {}: {error}", args.new.display()))
+    })?;
+    let old = PeImage::parse(&old_bytes)?;
+    let new = PeImage::parse(&new_bytes)?;
+    let source = resolve_function(&old, args.address, args.rva)?;
+    let matches = Matcher {
+        top: 1,
+        threshold: args.threshold,
+    }
+    .find(&source, &new)?;
+    let Some(best) = matches.first() else {
+        if args.json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "source": summary(&source),
+                    "matches": [],
+                }))
+                .expect("JSON serialization cannot fail")
+            );
+        } else {
+            println!("no match above threshold");
+        }
+        return Ok(1);
+    };
+    let result =
+        relocdiff_core::diff_functions(&source, &best.function, best.confidence, best.score);
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result).expect("JSON serialization cannot fail")
+        );
+    } else {
+        print_diff(&result);
+    }
+    Ok(0)
 }
 
 fn find(args: FindArgs) -> Result<i32> {
@@ -185,6 +256,35 @@ fn print_find(path: &Path, source: &Function, matches: &[Match]) {
             candidate.byte_size,
             candidate.instruction_changes,
             candidate.block_changes
+        );
+    }
+}
+
+fn print_diff(diff: &relocdiff_core::FunctionDiff) {
+    println!("source  {:#x}", diff.source_address);
+    println!(
+        "match   {:#x}  {:.1}%",
+        diff.target_address, diff.confidence
+    );
+    println!();
+    println!("changes");
+    println!("  changed instructions  {}", diff.changed_instructions);
+    println!("  inserted instructions {}", diff.inserted_instructions);
+    println!("  removed instructions  {}", diff.removed_instructions);
+    println!("  changed constants     {}", diff.changed_constants);
+    println!("  changed calls         {}", diff.changed_calls);
+    println!("  changed blocks        {}", diff.changed_blocks);
+    for change in &diff.structural_changes {
+        println!("  structural            {change}");
+    }
+    for operation in diff
+        .operations
+        .iter()
+        .filter(|operation| operation.kind != relocdiff_core::DiffKind::Unchanged)
+    {
+        println!(
+            "  {:?}: {:?} -> {:?}",
+            operation.kind, operation.source, operation.target
         );
     }
 }

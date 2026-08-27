@@ -1,4 +1,4 @@
-use relocdiff_core::{Matcher, PeImage};
+use relocdiff_core::{diff_functions, DiffKind, Matcher, PeImage};
 
 fn image(code: &[u8], second_code: &[u8]) -> Vec<u8> {
     let mut bytes = vec![0u8; 0x800];
@@ -154,4 +154,31 @@ fn ranks_relocated_function_first_and_orders_ties() {
     assert_eq!(matches[0].confidence, 100.0);
     assert_eq!(matches[0].score.instruction_similarity, 1.0);
     assert!(matches[1].confidence < matches[0].confidence);
+}
+
+#[test]
+fn reports_semantic_constant_changes() {
+    let old = PeImage::parse(&image(&first_code(0x20, 0x100, 0x2a), &second_code(5))).unwrap();
+    let new = PeImage::parse(&image(&first_code(0x80, 0x125, 0x2a), &second_code(6))).unwrap();
+    let source = old.function_at_va(0x140001020).unwrap();
+    let candidate = Matcher {
+        top: 1,
+        threshold: 0.0,
+    }
+    .find(&source, &new)
+    .unwrap()
+    .pop()
+    .unwrap();
+    let diff = diff_functions(
+        &source,
+        &candidate.function,
+        candidate.confidence,
+        candidate.score,
+    );
+    assert_eq!(diff.target_address, 0x140001020);
+    assert_eq!(diff.changed_constants, 1);
+    assert!(diff
+        .operations
+        .iter()
+        .any(|operation| operation.kind == DiffKind::ChangedConstant));
 }

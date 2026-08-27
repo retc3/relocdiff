@@ -19,6 +19,7 @@ cargo install relocdiff
 ```sh
 relocdiff find OLD NEW --address VA
 relocdiff find OLD NEW --rva RVA
+relocdiff diff OLD NEW --address VA
 relocdiff inspect FILE --address VA
 ```
 

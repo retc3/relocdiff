@@ -99,6 +99,11 @@ $inspect = (& $exe inspect $old --rva 0x1000 | Out-String)
 if ($LASTEXITCODE -ne 0) { throw "inspect command failed" }
 if ($inspect -notmatch "ripmem:8" -or $inspect -notmatch "scalar:0x2a") { throw "inspect output missed normalized operands" }
 
+$diffText = (& $exe diff $old $new --rva 0x1020 --json | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) { throw "diff command failed" }
+$diff = $diffText | ConvertFrom-Json
+if ([int]$diff.changed_constants -ne 1) { throw "diff missed changed constant" }
+
 $missing = Join-Path $out "missing.exe"
 $errorFile = Join-Path $out "error.txt"
 & $exe inspect $missing --rva 0x1000 1>$null 2>$errorFile
