@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/relocdiff-core", "crates/relocdiff-cli"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 authors = ["retc3 <retc3@disroot.org>"]
 edition = "2021"
 rust-version = "1.80"
