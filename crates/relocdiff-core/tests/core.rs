@@ -1,5 +1,5 @@
 use relocdiff_core::{
-    diff_functions, map_images, AnalysisIndex, DiffKind, MapState, Matcher, PeImage,
+    diff_functions, map_images, AnalysisIndex, DiffKind, Error, MapState, Matcher, PeImage,
 };
 
 fn image(code: &[u8], second_code: &[u8]) -> Vec<u8> {
@@ -246,4 +246,12 @@ fn round_trips_analysis_index() {
             .collect::<Vec<_>>(),
         vec![0x14000110c]
     );
+}
+
+#[test]
+fn rejects_incompatible_analysis_index() {
+    assert!(matches!(
+        AnalysisIndex::from_bytes(b"RDXI\x02"),
+        Err(Error::InvalidIndex(_))
+    ));
 }

@@ -122,6 +122,23 @@ if ($LASTEXITCODE -ne 0) { throw "indexed find command failed" }
 $indexedResult = $indexedFind | ConvertFrom-Json
 if ($indexedResult.matches[0].address -ne "0x140001000") { throw "indexed find returned wrong address" }
 
+$indexedDiffText = (& $exe diff $oldIndex $newIndex --rva 0x1020 --json | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) { throw "indexed diff command failed" }
+$indexedDiff = $indexedDiffText | ConvertFrom-Json
+if ([int]$indexedDiff.changed_constants -ne 1) { throw "indexed diff missed changed constant" }
+
+$indexedMapText = (& $exe map $oldIndex $newIndex --threshold 70 --json | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) { throw "indexed map command failed" }
+$indexedMap = $indexedMapText | ConvertFrom-Json
+if ($indexedMap.entries[0].state -ne "Matched" -or $indexedMap.entries[1].state -ne "Changed") { throw "indexed map returned wrong states" }
+
+$badIndex = Join-Path $out "bad.rdx"
+[IO.File]::WriteAllBytes($badIndex, [byte[]]@(0x52, 0x44, 0x58, 0x49, 0x02))
+$badError = Join-Path $out "bad-index-error.txt"
+& $exe inspect $badIndex --rva 0x1000 1>$null 2>$badError
+if ($LASTEXITCODE -ne 2) { throw "corrupt index did not return exit code 2" }
+if ((Get-Content -Raw $badError) -notmatch "invalid analysis index") { throw "corrupt index did not write a useful error" }
+
 $missing = Join-Path $out "missing.exe"
 $errorFile = Join-Path $out "error.txt"
 & $exe inspect $missing --rva 0x1000 1>$null 2>$errorFile
