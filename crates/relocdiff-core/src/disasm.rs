@@ -132,11 +132,22 @@ fn normalize(
                 .saturating_add(u64::from(function_end_rva));
             if target >= function_start && target < end_va {
                 "local".to_string()
+            } else if image.va_to_rva(target).is_ok() {
+                "image".to_string()
             } else {
                 "external".to_string()
             }
+        } else if matches!(
+            instruction.flow_control(),
+            FlowControl::IndirectCall | FlowControl::IndirectBranch
+        ) {
+            if kind == OpKind::Register {
+                format!("indirect:reg:{:?}", instruction.op_register(operand)).to_ascii_lowercase()
+            } else {
+                "indirect:memory".to_string()
+            }
         } else if instruction.is_ip_rel_memory_operand() && kind == OpKind::Memory {
-            format!("ripmem:{}", instruction.memory_displ_size())
+            format!("ripmem:{}", instruction.memory_size().size())
         } else if matches!(
             kind,
             OpKind::Immediate8

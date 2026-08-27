@@ -1,5 +1,6 @@
 use crate::disasm::{decode_function, Instruction};
 use crate::{Error, Result};
+use iced_x86::{Decoder, DecoderOptions, OpKind};
 use serde::Serialize;
 use std::collections::BTreeSet;
 
@@ -102,6 +103,7 @@ pub struct PeImage {
     entry_rva: u32,
     size_of_image: u32,
     sections: Vec<Section>,
+    exception_directory: Option<(u32, u32)>,
     ranges: Vec<(u32, u32, FunctionSource)>,
 }
 
@@ -220,6 +222,12 @@ impl PeImage {
             .map(|(start, _, _)| self.image_base + u64::from(*start))
     }
 
+    pub(crate) fn recoverable_functions(&self) -> impl Iterator<Item = Function> + '_ {
+        self.ranges
+            .iter()
+            .filter_map(|(start, _, _)| self.function_at_rva(*start).ok())
+    }
+
     fn parse_headers(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < 0x40 || &bytes[0..2] != b"MZ" {
             return Err(Error::InvalidPe("missing DOS header".into()));
@@ -252,6 +260,11 @@ impl PeImage {
         let image_base = read_u64(bytes, optional + 24)?;
         let entry_rva = read_u32(bytes, optional + 16)?;
         let size_of_image = read_u32(bytes, optional + 56)?;
+        if image_base == 0 || size_of_image == 0 {
+            return Err(Error::InvalidPe(
+                "image base and image size must be non-zero".into(),
+            ));
+        }
         let directory_count = read_u32(bytes, optional + 108)? as usize;
         let section_offset = optional
             .checked_add(optional_size)
@@ -272,27 +285,48 @@ impl PeImage {
                 .get(offset..header_end)
                 .ok_or_else(|| Error::InvalidPe("section header is truncated".into()))?;
             let name_end = header[..8].iter().position(|byte| *byte == 0).unwrap_or(8);
-            sections.push(Section {
+            let section = Section {
                 name: String::from_utf8_lossy(&header[..name_end]).into_owned(),
                 virtual_size: u32::from_le_bytes(header[8..12].try_into().unwrap()),
                 virtual_address: u32::from_le_bytes(header[12..16].try_into().unwrap()),
                 raw_size: u32::from_le_bytes(header[16..20].try_into().unwrap()),
                 raw_offset: u32::from_le_bytes(header[20..24].try_into().unwrap()),
                 characteristics: u32::from_le_bytes(header[36..40].try_into().unwrap()),
-            });
+            };
+            let mapped_size = section.virtual_size.max(section.raw_size);
+            if section
+                .virtual_address
+                .checked_add(mapped_size)
+                .map_or(true, |end| end > size_of_image)
+            {
+                return Err(Error::InvalidPe("section lies outside the image".into()));
+            }
+            if section
+                .raw_offset
+                .checked_add(section.raw_size)
+                .map_or(true, |end| u64::from(end) > bytes.len() as u64)
+            {
+                return Err(Error::InvalidPe("section lies outside the file".into()));
+            }
+            sections.push(section);
         }
+        let exception_directory = if directory_count > IMAGE_DIRECTORY_ENTRY_EXCEPTION {
+            let directory = optional
+                .checked_add(112 + IMAGE_DIRECTORY_ENTRY_EXCEPTION * 8)
+                .ok_or_else(|| Error::InvalidPe("data directory overflow".into()))?;
+            Some((read_u32(bytes, directory)?, read_u32(bytes, directory + 4)?))
+        } else {
+            None
+        };
         let image = Self {
             bytes: bytes.to_vec(),
             image_base,
             entry_rva,
             size_of_image,
             sections,
+            exception_directory,
             ranges: Vec::new(),
         };
-        if directory_count > IMAGE_DIRECTORY_ENTRY_EXCEPTION {
-            let directory = optional + 112 + IMAGE_DIRECTORY_ENTRY_EXCEPTION * 8;
-            let _ = (read_u32(bytes, directory)?, read_u32(bytes, directory + 4)?);
-        }
         Ok(image)
     }
 
@@ -300,39 +334,11 @@ impl PeImage {
         let mut ranges = self.pdata_ranges();
         let mut starts = BTreeSet::new();
         starts.extend(ranges.iter().map(|(start, _, _)| *start));
-        if self.is_executable_rva(self.entry_rva) {
-            starts.insert(self.entry_rva);
-        }
-        for section in self
-            .sections
-            .iter()
-            .filter(|section| section.is_executable())
-        {
-            if let Ok(offset) = self.rva_to_file_offset(section.virtual_address) {
-                let end = offset
-                    .saturating_add(section.raw_size as usize)
-                    .min(self.bytes.len());
-                let mut cursor = offset;
-                while cursor.saturating_add(5) <= end {
-                    if self.bytes[cursor] == 0xE8 {
-                        let rel = i32::from_le_bytes(
-                            self.bytes[cursor + 1..cursor + 5].try_into().unwrap(),
-                        );
-                        let target = (cursor as i64 + 5 + i64::from(rel)) - offset as i64
-                            + i64::from(section.virtual_address);
-                        if target >= 0
-                            && target <= i64::from(u32::MAX)
-                            && self.is_executable_rva(target as u32)
-                            && !ranges.iter().any(|(begin, end, _)| {
-                                target as u32 >= *begin && (target as u32) < *end
-                            })
-                        {
-                            starts.insert(target as u32);
-                        }
-                    }
-                    cursor += 1;
-                }
+        if ranges.is_empty() {
+            if self.is_executable_rva(self.entry_rva) {
+                starts.insert(self.entry_rva);
             }
+            starts.extend(self.discovered_call_starts());
         }
         let mut starts: Vec<u32> = starts.into_iter().collect();
         starts.sort_unstable();
@@ -354,18 +360,28 @@ impl PeImage {
 
     fn pdata_ranges(&self) -> Vec<(u32, u32, FunctionSource)> {
         let mut result = Vec::new();
+        let Some((directory_rva, directory_size)) = self.exception_directory else {
+            return result;
+        };
+        if directory_size < 12 {
+            return result;
+        }
+        let Ok(offset) = self.rva_to_file_offset(directory_rva) else {
+            return result;
+        };
         let Some(section) = self
             .sections
             .iter()
-            .find(|section| section.name == ".pdata")
+            .find(|section| section.contains_rva(directory_rva))
         else {
             return result;
         };
-        let Ok(offset) = self.rva_to_file_offset(section.virtual_address) else {
-            return result;
-        };
+        let available = section
+            .raw_size
+            .saturating_sub(directory_rva - section.virtual_address)
+            as usize;
         let end = offset
-            .saturating_add(section.raw_size as usize)
+            .saturating_add((directory_size as usize).min(available))
             .min(self.bytes.len());
         let mut cursor = offset;
         while cursor.saturating_add(12) <= end {
@@ -380,7 +396,52 @@ impl PeImage {
             }
             cursor += 12;
         }
+        result.sort_by_key(|range| range.0);
+        result.dedup_by(|left, right| left.0 == right.0);
         result
+    }
+
+    fn discovered_call_starts(&self) -> impl Iterator<Item = u32> + '_ {
+        self.sections
+            .iter()
+            .filter(|section| section.is_executable())
+            .flat_map(|section| {
+                let Ok(offset) = self.rva_to_file_offset(section.virtual_address) else {
+                    return Vec::new().into_iter();
+                };
+                let end = offset
+                    .saturating_add(section.raw_size as usize)
+                    .min(self.bytes.len());
+                let mut decoder = Decoder::with_ip(
+                    64,
+                    &self.bytes[offset..end],
+                    self.image_base + u64::from(section.virtual_address),
+                    DecoderOptions::NONE,
+                );
+                let mut starts = Vec::new();
+                while decoder.can_decode() {
+                    let instruction = decoder.decode();
+                    if instruction.is_invalid() || instruction.len() == 0 {
+                        break;
+                    }
+                    if instruction.is_call_near()
+                        && !instruction.is_call_near_indirect()
+                        && instruction.op_count() > 0
+                        && matches!(
+                            instruction.op_kind(0),
+                            OpKind::NearBranch16 | OpKind::NearBranch32 | OpKind::NearBranch64
+                        )
+                    {
+                        let target = instruction.near_branch_target();
+                        if let Ok(target_rva) = self.va_to_rva(target) {
+                            if self.is_executable_rva(target_rva) {
+                                starts.push(target_rva);
+                            }
+                        }
+                    }
+                }
+                starts.into_iter()
+            })
     }
 
     fn is_executable_rva(&self, rva: u32) -> bool {
@@ -404,7 +465,12 @@ impl PeImage {
 
 fn read_u16(bytes: &[u8], offset: usize) -> Result<u16> {
     bytes
-        .get(offset..offset + 2)
+        .get(
+            offset
+                ..offset
+                    .checked_add(2)
+                    .ok_or_else(|| Error::InvalidPe("offset overflow".into()))?,
+        )
         .and_then(|slice| slice.try_into().ok())
         .map(u16::from_le_bytes)
         .ok_or_else(|| Error::InvalidPe("truncated header".into()))
@@ -412,7 +478,12 @@ fn read_u16(bytes: &[u8], offset: usize) -> Result<u16> {
 
 fn read_u32(bytes: &[u8], offset: usize) -> Result<u32> {
     bytes
-        .get(offset..offset + 4)
+        .get(
+            offset
+                ..offset
+                    .checked_add(4)
+                    .ok_or_else(|| Error::InvalidPe("offset overflow".into()))?,
+        )
         .and_then(|slice| slice.try_into().ok())
         .map(u32::from_le_bytes)
         .ok_or_else(|| Error::InvalidPe("truncated header".into()))
@@ -420,7 +491,12 @@ fn read_u32(bytes: &[u8], offset: usize) -> Result<u32> {
 
 fn read_u64(bytes: &[u8], offset: usize) -> Result<u64> {
     bytes
-        .get(offset..offset + 8)
+        .get(
+            offset
+                ..offset
+                    .checked_add(8)
+                    .ok_or_else(|| Error::InvalidPe("offset overflow".into()))?,
+        )
         .and_then(|slice| slice.try_into().ok())
         .map(u64::from_le_bytes)
         .ok_or_else(|| Error::InvalidPe("truncated header".into()))

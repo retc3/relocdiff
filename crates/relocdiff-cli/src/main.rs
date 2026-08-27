@@ -179,8 +179,12 @@ fn print_find(path: &Path, source: &Function, matches: &[Match]) {
     println!("matches");
     for candidate in matches {
         println!(
-            "  {:.1}%  {:#x}  {} bytes",
-            candidate.confidence, candidate.address, candidate.byte_size
+            "  {:.1}%  {:#x}  {} bytes  {} instructions changed, {} blocks changed",
+            candidate.confidence,
+            candidate.address,
+            candidate.byte_size,
+            candidate.instruction_changes,
+            candidate.block_changes
         );
     }
 }
@@ -202,6 +206,11 @@ fn match_summary(candidate: &Match) -> serde_json::Value {
         "confidence": candidate.confidence,
         "instruction_changes": candidate.instruction_changes,
         "block_changes": candidate.block_changes,
+        "score": {
+            "instruction_similarity": candidate.score.instruction_similarity,
+            "structure_similarity": candidate.score.structure_similarity,
+            "size_similarity": candidate.score.size_similarity,
+        },
     })
 }
 

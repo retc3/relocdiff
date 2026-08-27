@@ -14,6 +14,8 @@ pub struct Match {
     pub instruction_changes: usize,
     /// Absolute basic-block count difference.
     pub block_changes: usize,
+    /// Component similarities used to produce `confidence`.
+    pub score: MatchScore,
     /// Candidate function details.
     pub function: Function,
 }
@@ -51,24 +53,24 @@ impl Matcher {
     /// Find ranked target functions for a source function.
     pub fn find(&self, source: &Function, target: &PeImage) -> Result<Vec<Match>> {
         let mut results = Vec::new();
-        for address in target.function_starts() {
-            let Ok(function) = target.function_at_va(address) else {
-                continue;
-            };
+        for function in target.recoverable_functions() {
+            let address = function.address;
             if !candidate_filter(source, &function) {
                 continue;
             }
-            let score = score(source, &function);
-            if score < self.threshold {
+            let score = score_details(source, &function);
+            let confidence = confidence(score);
+            if confidence < self.threshold {
                 continue;
             }
             let instruction_changes = changed_instructions(source, &function);
             results.push(Match {
                 address,
                 byte_size: function.byte_size,
-                confidence: score,
+                confidence,
                 instruction_changes,
                 block_changes: source.block_count().abs_diff(function.block_count()),
+                score,
                 function,
             });
         }
@@ -90,11 +92,15 @@ fn candidate_filter(source: &Function, candidate: &Function) -> bool {
     instruction_ratio >= 0.25 && byte_ratio >= 0.25 && block_ratio >= 0.25
 }
 
-fn score(source: &Function, candidate: &Function) -> f32 {
+fn score_details(source: &Function, candidate: &Function) -> MatchScore {
     let source_fp = fingerprint(source);
     let candidate_fp = fingerprint(candidate);
     if source_fp == candidate_fp && source.instruction_count() == candidate.instruction_count() {
-        return 100.0;
+        return MatchScore {
+            instruction_similarity: 1.0,
+            structure_similarity: 1.0,
+            size_similarity: 1.0,
+        };
     }
     let instruction = sequence_similarity(source, candidate);
     let structure = 1.0
@@ -116,7 +122,18 @@ fn score(source: &Function, candidate: &Function) -> f32 {
                 / source.return_count.max(candidate.return_count).max(1) as f32)
                 * 0.15);
     let size = ratio(source.byte_size as usize, candidate.byte_size as usize);
-    (instruction * 0.70 + structure.clamp(0.0, 1.0) * 0.20 + size * 0.10) * 100.0
+    MatchScore {
+        instruction_similarity: instruction,
+        structure_similarity: structure.clamp(0.0, 1.0),
+        size_similarity: size,
+    }
+}
+
+fn confidence(score: MatchScore) -> f32 {
+    (score.instruction_similarity * 0.70
+        + score.structure_similarity * 0.20
+        + score.size_similarity * 0.10)
+        * 100.0
 }
 
 fn sequence_similarity(source: &Function, candidate: &Function) -> f32 {

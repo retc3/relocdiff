@@ -101,6 +101,18 @@ fn rejects_malformed_and_unsupported_images() {
     let mut bytes = image(&first_code(0x20, 5, 0x2a), &second_code(5));
     bytes[0x98..0x9a].copy_from_slice(&0x10bu16.to_le_bytes());
     assert!(PeImage::parse(&bytes).is_err());
+
+    let mut bytes = image(&first_code(0x20, 5, 0x2a), &second_code(5));
+    bytes[0x188 + 20..0x188 + 24].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(PeImage::parse(&bytes).is_err());
+}
+
+#[test]
+fn uses_the_exception_directory_without_a_pdata_name() {
+    let mut bytes = image(&first_code(0x20, 5, 0x2a), &second_code(5));
+    bytes[0x1b0..0x1b8].copy_from_slice(b".runtime");
+    let image = PeImage::parse(&bytes).unwrap();
+    assert_eq!(image.function_starts().count(), 2);
 }
 
 #[test]
@@ -121,6 +133,10 @@ fn normalizes_relocations_but_keeps_scalars() {
         .operands
         .iter()
         .any(|operand| operand == "scalar:0x2a")));
+    assert!(old_function.normalized().any(|instruction| instruction
+        .operands
+        .iter()
+        .any(|operand| operand == "image")));
 }
 
 #[test]
@@ -136,5 +152,6 @@ fn ranks_relocated_function_first_and_orders_ties() {
     .unwrap();
     assert_eq!(matches[0].address, 0x140001000);
     assert_eq!(matches[0].confidence, 100.0);
+    assert_eq!(matches[0].score.instruction_similarity, 1.0);
     assert!(matches[1].confidence < matches[0].confidence);
 }
